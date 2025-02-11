@@ -1,0 +1,424 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>在线考试系统</title>
+    <style>
+        :root {
+            --primary-color: #2196F3;
+            --secondary-color: #607D8B;
+        }
+
+        body {
+            font-family: 'Segoe UI', Arial, sans-serif;
+            line-height: 1.6;
+            margin: 0;
+            padding: 20px;
+            background-color: #f5f5f5;
+        }
+
+        .container {
+            max-width: 1000px;
+            margin: 0 auto;
+            background: white;
+            padding: 30px;
+            border-radius: 10px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+
+        .question-card {
+            border: 1px solid #e0e0e0;
+            padding: 25px;
+            margin: 20px 0;
+            border-radius: 8px;
+            background: #fff;
+            position: relative;
+            padding-bottom: 80px;
+        }
+
+        .question-text {
+            font-size: 1.1em;
+            color: #333;
+            margin-bottom: 20px;
+            font-weight: 500;
+        }
+
+        .option-label {
+            display: block;
+            margin: 10px 0;
+            padding: 12px;
+            border: 1px solid #eee;
+            border-radius: 4px;
+            transition: all 0.2s;
+        }
+
+        .option-label:hover {
+            background: #f8f9fa;
+            transform: translateX(5px);
+        }
+
+        input[type="radio"], 
+        input[type="checkbox"] {
+            margin-right: 10px;
+            transform: scale(1.2);
+        }
+
+        .bottom-controls {
+            position: absolute;
+            bottom: 20px;
+            left: 0;
+            right: 0;
+            display: flex;
+            justify-content: space-between;
+            padding: 0 25px;
+            align-items: center;
+        }
+
+        .nav-btn {
+            padding: 8px 25px;
+            border: 1px solid #ddd;
+            background: white;
+            cursor: pointer;
+            border-radius: 4px;
+            transition: all 0.3s;
+        }
+
+        .nav-btn:hover:not(:disabled) {
+            background: var(--primary-color);
+            color: white;
+        }
+
+        .nav-btn:disabled {
+            background: #f5f5f5;
+            color: #999;
+            cursor: not-allowed;
+        }
+
+        #resultTable {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 30px;
+        }
+
+        #resultTable th {
+            background: var(--primary-color);
+            color: white;
+            padding: 12px;
+            text-align: left;
+        }
+
+        #resultTable td {
+            padding: 12px;
+            border-bottom: 1px solid #eee;
+        }
+
+        .correct { color: #4CAF50; }
+        .wrong { color: #f44336; }
+        .hidden { display: none; }
+
+         /* 新增警告样式 */
+        .alert-box {
+            background: #fff3cd;
+            border: 1px solid #ffeeba;
+            padding: 15px;
+            border-radius: 4px;
+            margin: 20px 0;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .alert-text { color: #856404; }
+        .confirm-buttons { display: flex; gap: 10px; }
+
+        /* 保持原有样式不变，新增结果表格样式 */
+        #resultTable th:nth-child(3),
+        #resultTable td:nth-child(3) {
+            width: 20%;
+        }
+        #resultTable th:nth-child(4),
+        #resultTable td:nth-child(4) {
+            width: 30%;
+        }
+        .option-content {
+            color: #666;
+            font-size: 0.9em;
+            margin-top: 5px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>专业资格考试系统</h1>
+        
+        <!-- 考生信息 -->
+        <div id="examInfo">
+            <input type="text" id="studentName" placeholder="请输入您的姓名" 
+                   style="padding: 10px; width: 300px; margin-right: 15px;">
+            <button onclick="initExam()" class="nav-btn" 
+                    style="background: var(--primary-color); color: white;">开始考试</button>
+        </div>
+
+        <!-- 考试界面 -->
+        <div id="examArea" class="hidden">
+            <div class="question-card" id="questionContainer"></div>
+            <button onclick="submitExam()" class="nav-btn" 
+                    style="background: #4CAF50; color: white; float: right;">提交试卷</button>
+        </div>
+
+        <!-- 修改后的考试结果部分 -->
+    <div id="resultArea" class="hidden">
+        <h2>考试结果 - <span id="studentNameResult"></span></h2>
+        <div style="margin: 20px 0;">
+            <span style="font-size: 1.2em;">最终得分：</span>
+            <span id="score" style="font-size: 1.5em; font-weight: bold;"></span>
+        </div>
+        <table id="resultTable">
+            <thead>
+                <tr>
+                    <th style="width: 40%;">题目</th>
+                    <th style="width: 15%;">你的答案</th>
+                    <th style="width: 15%;">正确答案</th>
+                    <th style="width: 30%;">选项内容</th>
+                </tr>
+            </thead>
+            <tbody id="resultBody"></tbody>
+        </table>
+    </div>
+
+     <div id="confirmDialog" class="hidden">
+        <div class="alert-box">
+            <div class="alert-text" id="unansweredList"></div>
+            <div class="confirm-buttons">
+                <button onclick="handleConfirm(true)" class="nav-btn">确认提交</button>
+                <button onclick="handleConfirm(false)" class="nav-btn">继续答题</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const QUESTION_BANK_URL = 'http://192.168.16.248/ks.csv';
+        let questions = [];
+        let currentQuestion = 0;
+        let userAnswers = {};
+        let studentName = '';
+        let pendingSubmit = false; // 是否等待提交确认
+
+        async function initExam() {
+            studentName = document.getElementById('studentName').value.trim();
+            if (!studentName) {
+                alert('请输入考生姓名');
+                return;
+            }
+
+            try {
+                const response = await fetch(QUESTION_BANK_URL);
+                if (!response.ok) throw new Error('题库加载失败');
+                const csvData = await response.text();
+                
+                // 解析题库并随机抽取50题
+                let allQuestions = parseCSV(csvData);
+                questions = shuffleArray(allQuestions).slice(0, 50);
+
+                document.getElementById('examInfo').classList.add('hidden');
+                document.getElementById('examArea').classList.remove('hidden');
+                showQuestion(currentQuestion);
+            } catch (error) {
+                alert(`系统错误：${error.message}`);
+            }
+        }
+
+        // Fisher-Yates洗牌算法
+        function shuffleArray(array) {
+            for (let i = array.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [array[i], array[j]] = [array[j], array[i]];
+            }
+            return array;
+        }
+
+        function parseCSV(data) {
+            const rows = data.split('\n').filter(row => row.trim());
+            const headers = rows[0].split(',').map(h => h.trim());
+            const result = [];
+
+            for (let i = 1; i < rows.length; i++) {
+                let row = rows[i];
+                let currentCell = '';
+                let cells = [];
+                let inQuotes = false;
+
+                for (let j = 0; j < row.length; j++) {
+                    const char = row[j];
+                    if (char === '"') {
+                        if (row[j + 1] === '"' && inQuotes) {
+                            currentCell += '"';
+                            j++;
+                        } else {
+                            inQuotes = !inQuotes;
+                        }
+                    } else if (char === ',' && !inQuotes) {
+                        cells.push(currentCell.trim());
+                        currentCell = '';
+                    } else {
+                        currentCell += char;
+                    }
+                }
+                cells.push(currentCell.trim());
+
+                if (cells.length === headers.length) {
+                    result.push({
+                        type: cells[0],
+                        question: cells[1],
+                        options: cells.slice(2, 6).filter(opt => opt),
+                        answer: cells[6].toUpperCase().replace(/\s+/g, '')
+                    });
+                }
+            }
+            return result;
+        }
+
+        function showQuestion(index) {
+            currentQuestion = index;
+            const question = questions[index];
+            
+            const questionHTML = `
+                <div class="question-text">${index + 1}. ${question.question}</div>
+                <div class="options">
+                    ${question.options.map((opt, i) => `
+                        <label class="option-label">
+                            <input type="${question.type === 'single' ? 'radio' : 'checkbox'}" 
+                                   name="q${index}" 
+                                   value="${String.fromCharCode(65 + i)}"
+                                   ${isOptionSelected(index, i) ? 'checked' : ''}
+                                   onchange="saveAnswer(${index})">
+                            ${String.fromCharCode(65 + i)}. ${opt}
+                        </label>
+                    `).join('')}
+                </div>
+                <div class="bottom-controls">
+                    <button onclick="prevQuestion()" class="nav-btn" 
+                        ${index === 0 ? 'disabled' : ''}>← 上一题</button>
+                    <div>${index + 1}/${questions.length}</div>
+                    <button onclick="nextQuestion()" class="nav-btn" 
+                        ${index === questions.length - 1 ? 'disabled' : ''}>下一题 →</button>
+                </div>
+            `;
+
+            document.getElementById('questionContainer').innerHTML = questionHTML;
+        }
+
+        function saveAnswer(qIndex) {
+            const inputs = Array.from(
+                document.querySelectorAll(`input[name="q${qIndex}"]:checked`)
+            );
+            userAnswers[qIndex] = inputs.map(input => input.value).sort().join(',');
+        }
+
+        function prevQuestion() {
+            if (currentQuestion > 0) showQuestion(currentQuestion - 1);
+        }
+
+        function nextQuestion() {
+            if (currentQuestion < questions.length - 1) showQuestion(currentQuestion + 1);
+        }
+
+        function isOptionSelected(qIndex, optionIndex) {
+            const answer = userAnswers[qIndex] || '';
+            const optionChar = String.fromCharCode(65 + optionIndex);
+            return answer.includes(optionChar);
+        }
+
+        // 修改后的提交函数
+        function submitExam() {
+            // 检查未答题目
+            const unansweredQuestions = [];
+            for (let i = 0; i < questions.length; i++) {
+                if (!userAnswers[i] || userAnswers[i].trim() === '') {
+                    unansweredQuestions.push(i + 1); // 显示给用户的题号从1开始
+                }
+            }
+
+            if (unansweredQuestions.length > 0) {
+                // 显示未答题目提示
+                document.getElementById('unansweredList').innerHTML = `
+                    共有 <strong>${unansweredQuestions.length}</strong> 题未回答：<br>
+                    题号：${unansweredQuestions.join(', ')}
+                `;
+                document.getElementById('confirmDialog').classList.remove('hidden');
+                pendingSubmit = true;
+            } else {
+                // 直接提交
+                showExamResult();
+            }
+        }
+
+          // 新增确认处理函数
+        function handleConfirm(confirm) {
+            document.getElementById('confirmDialog').classList.add('hidden');
+            if (confirm) {
+                showExamResult();
+            }
+            pendingSubmit = false;
+        }
+
+        // 修改后的showExamResult函数
+        function showExamResult() {
+            const results = questions.map((q, index) => {
+                const userAnswer = (userAnswers[index] || '').replace(/\s+/g, '');
+                const correctAnswer = q.answer;
+                
+                // 转换答案到选项内容
+                const getAnswerContent = (answerStr, options) => {
+                    return answerStr.split(',')
+                        .map(c => {
+                            const index = c.charCodeAt(0) - 65;
+                            return options[index] ? `${c}. ${options[index]}` : '';
+                        })
+                        .filter(Boolean)
+                        .join(', ');
+                };
+
+                return {
+                    question: q.question,
+                    userAnswer,
+                    correctAnswer,
+                    userAnswerContent: getAnswerContent(userAnswer, q.options),
+                    correctAnswerContent: getAnswerContent(q.answer, q.options),
+                    options: q.options,
+                    isCorrect: userAnswer === correctAnswer
+                };
+            });
+
+            document.getElementById('examArea').classList.add('hidden');
+            document.getElementById('resultArea').classList.remove('hidden');
+            
+            const correctCount = results.filter(r => r.isCorrect).length;
+            const score = (correctCount * 100 / results.length).toFixed(1);
+            
+            // 更新结果展示
+            document.getElementById('studentNameResult').textContent = studentName;
+            document.getElementById('score').textContent = `${score}分`;
+            
+            // 生成详细结果表格
+            document.getElementById('resultBody').innerHTML = results.map((r, i) => `
+                <tr>
+                    <td>
+                        <div>${i + 1}. ${r.question}</div>
+                        <div class="option-content">
+                            选项：${r.options.map((opt, idx) => 
+                                `${String.fromCharCode(65 + idx)}. ${opt}`
+                            ).join(', ')}
+                        </div>
+                    </td>
+                    <td class="${r.isCorrect ? 'correct' : 'wrong'}">
+                        ${r.userAnswerContent || '未作答'}
+                    </td>
+                    <td>${r.correctAnswerContent}</td>
+                    <td>${r.options.join('<br>')}</td>
+                </tr>
+            `).join('');
+        }
+    </script>
+</body>
+</html>
